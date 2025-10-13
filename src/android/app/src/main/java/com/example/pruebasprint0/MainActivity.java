@@ -1,12 +1,12 @@
 package com.example.pruebasprint0;
 
 import android.Manifest;
-import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanFilter;
+import android.bluetooth.le.ScanRecord;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
 import android.content.pm.PackageManager;
@@ -20,10 +20,10 @@ import androidx.core.content.ContextCompat;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
-// --------------------------------------------------------------
-// MainActivity - versión corregida BLE Android 12+
-// --------------------------------------------------------------
+// ------------------------------------------------------------------
+// ------------------------------------------------------------------
 
 public class MainActivity extends AppCompatActivity {
 
@@ -34,7 +34,7 @@ public class MainActivity extends AppCompatActivity {
     private ScanCallback callbackDelEscaneo = null;
 
     // --------------------------------------------------------------
-    // Escaneo general de todos los dispositivos BLE
+    // Buscar todos los dispositivos BLE
     // --------------------------------------------------------------
     private void buscarTodosLosDispositivosBTLE() {
         Log.d(ETIQUETA_LOG, "buscarTodosLosDispositivosBTL(): empieza");
@@ -43,20 +43,12 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onScanResult(int callbackType, ScanResult resultado) {
                 super.onScanResult(callbackType, resultado);
-                Log.d(ETIQUETA_LOG, "buscarTodosLosDispositivosBTL(): onScanResult()");
                 mostrarInformacionDispositivoBTLE(resultado);
             }
 
             @Override
-            public void onBatchScanResults(List<ScanResult> results) {
-                super.onBatchScanResults(results);
-                Log.d(ETIQUETA_LOG, "buscarTodosLosDispositivosBTL(): onBatchScanResults()");
-            }
-
-            @Override
             public void onScanFailed(int errorCode) {
-                super.onScanFailed(errorCode);
-                Log.e(ETIQUETA_LOG, "buscarTodosLosDispositivosBTL(): onScanFailed() código: " + errorCode);
+                Log.e(ETIQUETA_LOG, "Error de escaneo: " + errorCode);
             }
         };
 
@@ -66,182 +58,215 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        Log.d(ETIQUETA_LOG, "buscarTodosLosDispositivosBTL(): empezamos a escanear");
-        this.elEscanner.startScan(this.callbackDelEscaneo);
+        elEscanner.startScan(callbackDelEscaneo);
+        Log.d(ETIQUETA_LOG, "Escaneo iniciado (todos los dispositivos)");
     }
 
     // --------------------------------------------------------------
-    // Mostrar información detallada de un dispositivo detectado
+    // Mostrar información de un dispositivo BLE
     // --------------------------------------------------------------
     private void mostrarInformacionDispositivoBTLE(ScanResult resultado) {
-        BluetoothDevice bluetoothDevice = resultado.getDevice();
-        byte[] bytes = resultado.getScanRecord().getBytes();
-        int rssi = resultado.getRssi();
+        BluetoothDevice device = resultado.getDevice();
+
+        String nombre = null;
+        try {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
+                    == PackageManager.PERMISSION_GRANTED) {
+                nombre = device.getName();
+            }
+        } catch (SecurityException e) {
+            Log.e(ETIQUETA_LOG, "Sin permiso para obtener nombre del dispositivo", e);
+        }
+
+        if (nombre == null) nombre = "Desconocido";
 
         Log.d(ETIQUETA_LOG, "****************************************************");
-        Log.d(ETIQUETA_LOG, "****** DISPOSITIVO DETECTADO BTLE ******************");
-        Log.d(ETIQUETA_LOG, "****************************************************");
+        Log.d(ETIQUETA_LOG, "Dispositivo detectado BTLE:");
+        Log.d(ETIQUETA_LOG, "Nombre = " + nombre);
+        Log.d(ETIQUETA_LOG, "Dirección = " + device.getAddress());
+        Log.d(ETIQUETA_LOG, "RSSI = " + resultado.getRssi());
 
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
-                != PackageManager.PERMISSION_GRANTED) {
-            Log.e(ETIQUETA_LOG, "Permiso BLUETOOTH_CONNECT no concedido.");
+        ScanRecord record = resultado.getScanRecord();
+        if (record == null) {
+            Log.d(ETIQUETA_LOG, "Sin ScanRecord disponible");
             return;
         }
 
-        Log.d(ETIQUETA_LOG, "nombre = " + bluetoothDevice.getName());
-        Log.d(ETIQUETA_LOG, "dirección = " + bluetoothDevice.getAddress());
-        Log.d(ETIQUETA_LOG, "rssi = " + rssi);
-        Log.d(ETIQUETA_LOG, "bytes (" + bytes.length + ") = " + Utilidades.bytesToHexString(bytes));
+        byte[] bytes = record.getBytes();
+        Log.d(ETIQUETA_LOG, "Bytes (" + bytes.length + ") = " + Utilidades.bytesToHexString(bytes));
 
         TramaIBeacon tib = new TramaIBeacon(bytes);
-
-        Log.d(ETIQUETA_LOG, "----------------------------------------------------");
-        Log.d(ETIQUETA_LOG, "uuid  = " + Utilidades.bytesToString(tib.getUUID()));
-        Log.d(ETIQUETA_LOG, "major = " + Utilidades.bytesToInt(tib.getMajor()));
-        Log.d(ETIQUETA_LOG, "minor = " + Utilidades.bytesToInt(tib.getMinor()));
-        Log.d(ETIQUETA_LOG, "txPower = " + tib.getTxPower());
+        Log.d(ETIQUETA_LOG, "UUID = " + Utilidades.bytesToHexString(tib.getUUID()));
+        Log.d(ETIQUETA_LOG, "Major = " + Utilidades.bytesToInt(tib.getMajor()));
+        Log.d(ETIQUETA_LOG, "Minor = " + Utilidades.bytesToInt(tib.getMinor()));
         Log.d(ETIQUETA_LOG, "****************************************************");
     }
 
     // --------------------------------------------------------------
-    // Escanear buscando un nombre de dispositivo específico
+    // Buscar dispositivo por nombre
     // --------------------------------------------------------------
     private void buscarEsteDispositivoBTLE(final String dispositivoBuscado) {
-        Log.d(ETIQUETA_LOG, "buscarEsteDispositivoBTLE(): empieza");
+        Log.d(ETIQUETA_LOG, "Buscando dispositivo con nombre: " + dispositivoBuscado);
 
         this.callbackDelEscaneo = new ScanCallback() {
-            @SuppressLint("MissingPermission") // Permiso ya controlado
             @Override
             public void onScanResult(int callbackType, ScanResult resultado) {
                 super.onScanResult(callbackType, resultado);
+
                 BluetoothDevice device = resultado.getDevice();
                 String nombre = null;
 
-                // Comprobamos permiso antes de leer el nombre
-                if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.BLUETOOTH_CONNECT)
-                        == PackageManager.PERMISSION_GRANTED) {
-                    nombre = device.getName();
-                } else {
-                    Log.w(ETIQUETA_LOG, "Permiso BLUETOOTH_CONNECT no concedido: no se puede leer el nombre");
+                try {
+                    if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.BLUETOOTH_CONNECT)
+                            == PackageManager.PERMISSION_GRANTED) {
+                        nombre = device.getName();
+                    }
+                } catch (SecurityException e) {
+                    Log.e(ETIQUETA_LOG, "Error accediendo al nombre del dispositivo", e);
                 }
 
                 if (nombre != null && nombre.contains(dispositivoBuscado)) {
-                    Log.d(ETIQUETA_LOG, "Dispositivo encontrado: " + nombre);
+                    Log.d(ETIQUETA_LOG, "✅ Dispositivo encontrado por nombre: " + nombre);
                     mostrarInformacionDispositivoBTLE(resultado);
-                } else {
-                    Log.d(ETIQUETA_LOG, "Descartado: " + nombre);
                 }
-            }
-
-            @Override
-            public void onBatchScanResults(List<ScanResult> results) {
-                super.onBatchScanResults(results);
-                Log.d(ETIQUETA_LOG, "buscarEsteDispositivoBTLE(): onBatchScanResults()");
-            }
-
-            @Override
-            public void onScanFailed(int errorCode) {
-                super.onScanFailed(errorCode);
-                Log.e(ETIQUETA_LOG, "buscarEsteDispositivoBTLE(): onScanFailed() - Código: " + errorCode);
             }
         };
 
-        // --- Crear filtro de escaneo ---
-        List<ScanFilter> filtros = new ArrayList<>();
-        ScanFilter sf = new ScanFilter.Builder().setDeviceName(dispositivoBuscado).build();
-        filtros.add(sf);
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
+                != PackageManager.PERMISSION_GRANTED) {
+            Log.e(ETIQUETA_LOG, "Permiso BLUETOOTH_SCAN no concedido.");
+            return;
+        }
 
-        // --- Configurar ajustes del escaneo ---
+        List<ScanFilter> filtros = new ArrayList<>();
+        filtros.add(new ScanFilter.Builder().setDeviceName(dispositivoBuscado).build());
+
         ScanSettings settings = new ScanSettings.Builder()
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
                 .build();
 
+        elEscanner.startScan(filtros, settings, callbackDelEscaneo);
+    }
+
+    // --------------------------------------------------------------
+    // Buscar dispositivo por UUID (nuevo método)
+    // --------------------------------------------------------------
+    private void buscarDispositivoPorUUID(final UUID uuidBuscado) {
+        Log.d(ETIQUETA_LOG, "Buscando dispositivo con UUID: " + uuidBuscado);
+
+        this.callbackDelEscaneo = new ScanCallback() {
+            @Override
+            public void onScanResult(int callbackType, ScanResult resultado) {
+                super.onScanResult(callbackType, resultado);
+
+                ScanRecord record = resultado.getScanRecord();
+                if (record == null) return;
+
+                byte[] bytes = record.getBytes();
+                TramaIBeacon tib = new TramaIBeacon(bytes);
+
+                UUID uuidDetectado = null;
+                try {
+                    byte[] uuidBytes = tib.getUUID();
+                    if (uuidBytes != null && uuidBytes.length >= 16) {
+                        long msb = Utilidades.bytesToLong(java.util.Arrays.copyOfRange(uuidBytes, 0, 8));
+                        long lsb = Utilidades.bytesToLong(java.util.Arrays.copyOfRange(uuidBytes, 8, 16));
+                        uuidDetectado = new UUID(msb, lsb);
+                    }
+                } catch (Exception e) {
+                    Log.e(ETIQUETA_LOG, "Error al convertir UUID", e);
+                }
+
+                if (uuidDetectado != null && uuidDetectado.equals(uuidBuscado)) {
+                    Log.d(ETIQUETA_LOG, "✅ Dispositivo encontrado por UUID: " + uuidDetectado);
+                    mostrarInformacionDispositivoBTLE(resultado);
+                }
+            }
+        };
+
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
                 != PackageManager.PERMISSION_GRANTED) {
             Log.e(ETIQUETA_LOG, "Permiso BLUETOOTH_SCAN no concedido.");
             return;
         }
 
-        Log.d(ETIQUETA_LOG, "buscarEsteDispositivoBTLE(): escaneando nombre: " + dispositivoBuscado);
-        this.elEscanner.startScan(filtros, settings, this.callbackDelEscaneo);
+        List<ScanFilter> filtros = new ArrayList<>();
+        filtros.add(new ScanFilter.Builder()
+                .setServiceUuid(new android.os.ParcelUuid(uuidBuscado))
+                .build());
+
+        ScanSettings settings = new ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .build();
+
+        elEscanner.startScan(filtros, settings, callbackDelEscaneo);
     }
 
     // --------------------------------------------------------------
     private void detenerBusquedaDispositivosBTLE() {
-        if (this.callbackDelEscaneo == null) return;
+        if (callbackDelEscaneo == null) return;
 
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
                 != PackageManager.PERMISSION_GRANTED) {
-            Log.e(ETIQUETA_LOG, "Permiso BLUETOOTH_SCAN no concedido.");
             return;
         }
-
-        this.elEscanner.stopScan(this.callbackDelEscaneo);
-        this.callbackDelEscaneo = null;
+        elEscanner.stopScan(callbackDelEscaneo);
+        callbackDelEscaneo = null;
+        Log.d(ETIQUETA_LOG, "Escaneo detenido.");
     }
 
     // --------------------------------------------------------------
-    // Botones de la interfaz
+    // Botones
     // --------------------------------------------------------------
     public void botonBuscarDispositivosBTLEPulsado(View v) {
-        Log.d(ETIQUETA_LOG, "Botón buscar dispositivos BTLE pulsado");
-        this.buscarTodosLosDispositivosBTLE();
+        buscarTodosLosDispositivosBTLE();
     }
 
     public void botonBuscarNuestroDispositivoBTLEPulsado(View v) {
-        Log.d(ETIQUETA_LOG, "Botón buscar nuestro dispositivo BTLE pulsado");
-        this.buscarEsteDispositivoBTLE("fistro");
+        buscarEsteDispositivoBTLE("fistro");
+    }
+
+    public void botonBuscarPorUUIDPulsado(View v) {
+        // UUID ejemplo (debes reemplazarlo por el tuyo real)
+        UUID uuid = UUID.fromString("74278bda-b644-4520-8f0c-720eaf059935");
+        buscarDispositivoPorUUID(uuid);
     }
 
     public void botonDetenerBusquedaDispositivosBTLEPulsado(View v) {
-        Log.d(ETIQUETA_LOG, "Botón detener búsqueda dispositivos BTLE pulsado");
-        this.detenerBusquedaDispositivosBTLE();
+        detenerBusquedaDispositivosBTLE();
     }
 
     // --------------------------------------------------------------
-    // Inicialización Bluetooth
-    // --------------------------------------------------------------
     private void inicializarBlueTooth() {
-        Log.d(ETIQUETA_LOG, "inicializarBlueTooth(): obteniendo adaptador BT");
-
         BluetoothAdapter bta = BluetoothAdapter.getDefaultAdapter();
         if (bta == null) {
-            Log.e(ETIQUETA_LOG, "inicializarBlueTooth(): este dispositivo no soporta Bluetooth");
+            Log.e(ETIQUETA_LOG, "No se ha encontrado adaptador Bluetooth.");
             return;
         }
 
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
-                != PackageManager.PERMISSION_GRANTED) {
-            Log.e(ETIQUETA_LOG, "Permiso BLUETOOTH_CONNECT no concedido.");
-            return;
+                == PackageManager.PERMISSION_GRANTED) {
+            bta.enable();
         }
 
-        bta.enable();
-        this.elEscanner = bta.getBluetoothLeScanner();
+        elEscanner = bta.getBluetoothLeScanner();
 
-        if (this.elEscanner == null) {
-            Log.e(ETIQUETA_LOG, "inicializarBlueTooth(): no se pudo obtener escáner BLE");
-        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
+                != PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
+                        != PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                        != PackageManager.PERMISSION_GRANTED) {
 
-        Log.d(ETIQUETA_LOG, "inicializarBlueTooth(): pidiendo permisos si faltan");
-
-        // Petición de permisos runtime (Android 12+)
-        if (
-                ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
-                        || ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED
-                        || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-        ) {
             ActivityCompat.requestPermissions(
-                    MainActivity.this,
+                    this,
                     new String[]{
-                            Manifest.permission.BLUETOOTH_CONNECT,
                             Manifest.permission.BLUETOOTH_SCAN,
+                            Manifest.permission.BLUETOOTH_CONNECT,
                             Manifest.permission.ACCESS_FINE_LOCATION
                     },
                     CODIGO_PETICION_PERMISOS
             );
-        } else {
-            Log.d(ETIQUETA_LOG, "inicializarBlueTooth(): ya se tienen los permisos necesarios");
         }
     }
 
@@ -250,22 +275,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        Log.d(ETIQUETA_LOG, "onCreate(): empieza");
         inicializarBlueTooth();
-        Log.d(ETIQUETA_LOG, "onCreate(): termina");
-    }
-
-    // --------------------------------------------------------------
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
-        if (requestCode == CODIGO_PETICION_PERMISOS) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Log.d(ETIQUETA_LOG, "Permisos concedidos correctamente");
-            } else {
-                Log.e(ETIQUETA_LOG, "Permisos NO concedidos, BLE deshabilitado");
-            }
-        }
     }
 }
