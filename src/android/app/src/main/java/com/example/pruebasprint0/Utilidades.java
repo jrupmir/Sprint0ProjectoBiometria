@@ -27,13 +27,7 @@ public class Utilidades {
 
         String masSignificativo = uuid.substring(0, 8);
         String menosSignificativo = uuid.substring(8, 16);
-        UUID res = new UUID( Utilidades.bytesToLong( masSignificativo.getBytes() ), Utilidades.bytesToLong( menosSignificativo.getBytes() ) );
-
-        // Log.d( MainActivity.ETIQUETA_LOG, " \n\n***** stringToUUID *** " + uuid  + "=?=" + Utilidades.uuidToString( res ) );
-
-        // UUID res = UUID.nameUUIDFromBytes( comoBytes ); no va como quiero
-
-        return res;
+        return new UUID(Utilidades.bytesToLong(masSignificativo.getBytes()), Utilidades.bytesToLong(menosSignificativo.getBytes()));
     } // ()
 
     // -------------------------------------------------------------------------------
