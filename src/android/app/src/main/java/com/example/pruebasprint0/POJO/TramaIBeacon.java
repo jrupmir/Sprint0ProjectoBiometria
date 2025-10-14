@@ -1,4 +1,4 @@
-package com.example.pruebasprint0;
+package com.example.pruebasprint0.POJO;
 
 import java.util.Arrays;
 

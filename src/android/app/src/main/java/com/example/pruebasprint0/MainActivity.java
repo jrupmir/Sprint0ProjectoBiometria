@@ -18,9 +18,18 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import com.example.pruebasprint0.API.RetrofitClient;
+import com.example.pruebasprint0.LOGIC.Utilidades;
+import com.example.pruebasprint0.POJO.Medicion;
+import com.example.pruebasprint0.POJO.TramaIBeacon;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 // ------------------------------------------------------------------
 // ------------------------------------------------------------------
@@ -37,38 +46,30 @@ public class MainActivity extends AppCompatActivity {
     // Buscar todos los dispositivos BLE
     // --------------------------------------------------------------
     private void buscarTodosLosDispositivosBTLE() {
-        Log.d(ETIQUETA_LOG, " buscarTodosLosDispositivosBTL(): empieza ");
-
-        Log.d(ETIQUETA_LOG, " buscarTodosLosDispositivosBTL(): instalamos scan callback ");
+        Log.d(ETIQUETA_LOG, "buscarTodosLosDispositivosBTL(): empieza");
 
         this.callbackDelEscaneo = new ScanCallback() {
             @Override
             public void onScanResult(int callbackType, ScanResult resultado) {
                 super.onScanResult(callbackType, resultado);
-                Log.d(ETIQUETA_LOG, " buscarTodosLosDispositivosBTL(): onScanResult() ");
-
                 mostrarInformacionDispositivoBTLE(resultado);
             }
 
             @Override
             public void onBatchScanResults(List<ScanResult> results) {
                 super.onBatchScanResults(results);
-                Log.d(ETIQUETA_LOG, " buscarTodosLosDispositivosBTL(): onBatchScanResults() ");
-
             }
 
             @Override
             public void onScanFailed(int errorCode) {
                 super.onScanFailed(errorCode);
-                Log.d(ETIQUETA_LOG, " buscarTodosLosDispositivosBTL(): onScanFailed() ");
-
+                Log.e(ETIQUETA_LOG, "Error en el escaneo: " + errorCode);
             }
         };
 
-        Log.d(ETIQUETA_LOG, " buscarTodosLosDispositivosBTL(): empezamos a escanear ");
-
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
-            Log.d(ETIQUETA_LOG, " buscarTodosLosDispositivosBTL(): NO tengo permisos para escanear ");
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
+                != PackageManager.PERMISSION_GRANTED) {
+            Log.d(ETIQUETA_LOG, "No tengo permisos para escanear BLE.");
             ActivityCompat.requestPermissions(
                     MainActivity.this,
                     new String[]{Manifest.permission.BLUETOOTH_SCAN},
@@ -76,48 +77,97 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         this.elEscanner.startScan(this.callbackDelEscaneo);
-
     }
 
     // --------------------------------------------------------------
     // Mostrar información de un dispositivo BLE
     // --------------------------------------------------------------
     private void mostrarInformacionDispositivoBTLE(ScanResult resultado) {
-        BluetoothDevice device = resultado.getDevice();
 
-        String nombre = null;
-        try {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
-                    == PackageManager.PERMISSION_GRANTED) {
-                nombre = device.getName();
-            }
-        } catch (SecurityException e) {
-            Log.e(ETIQUETA_LOG, "Sin permiso para obtener nombre del dispositivo", e);
-        }
-
-        if (nombre == null) nombre = "Desconocido";
+        BluetoothDevice bluetoothDevice = resultado.getDevice();
+        byte[] bytes = resultado.getScanRecord().getBytes();
+        int rssi = resultado.getRssi();
 
         Log.d(ETIQUETA_LOG, "****************************************************");
-        Log.d(ETIQUETA_LOG, "Dispositivo detectado BTLE:");
-        Log.d(ETIQUETA_LOG, "Nombre = " + nombre);
-        Log.d(ETIQUETA_LOG, "Dirección = " + device.getAddress());
-        Log.d(ETIQUETA_LOG, "RSSI = " + resultado.getRssi());
+        Log.d(ETIQUETA_LOG, "****** DISPOSITIVO DETECTADO BTLE ******************");
+        Log.d(ETIQUETA_LOG, "****************************************************");
 
-        ScanRecord record = resultado.getScanRecord();
-        if (record == null) {
-            Log.d(ETIQUETA_LOG, "Sin ScanRecord disponible");
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            Log.d(ETIQUETA_LOG, "mostrarInformacionDispositivoBTLE(): NO tengo permisos para conectar");
+            ActivityCompat.requestPermissions(
+                    MainActivity.this,
+                    new String[]{Manifest.permission.BLUETOOTH_CONNECT},
+                    CODIGO_PETICION_PERMISOS);
             return;
         }
 
-        byte[] bytes = record.getBytes();
-        Log.d(ETIQUETA_LOG, "Bytes (" + bytes.length + ") = " + Utilidades.bytesToHexString(bytes));
+        Log.d(ETIQUETA_LOG, "Nombre = " + bluetoothDevice.getName());
+        Log.d(ETIQUETA_LOG, "Dirección = " + bluetoothDevice.getAddress());
+        Log.d(ETIQUETA_LOG, "RSSI = " + rssi);
+
+        // Revisamos que tengamos manufacturer data
+        if (bytes == null || bytes.length == 0) {
+            Log.d(ETIQUETA_LOG, "No hay datos de scan disponibles");
+            return;
+        }
 
         TramaIBeacon tib = new TramaIBeacon(bytes);
-        Log.d(ETIQUETA_LOG, "UUID = " + Utilidades.bytesToHexString(tib.getUUID()));
-        Log.d(ETIQUETA_LOG, "Major = " + Utilidades.bytesToInt(tib.getMajor()));
-        Log.d(ETIQUETA_LOG, "Minor = " + Utilidades.bytesToInt(tib.getMinor()));
+
+        // Extraemos major y minor
+        byte[] majorBytes = tib.getMajor();  // 2 bytes
+        byte[] minorBytes = tib.getMinor();  // 2 bytes, normalmente valor de la medición
+
+        if (majorBytes == null || majorBytes.length < 2) {
+            Log.d(ETIQUETA_LOG, "Major data incompleta");
+            return;
+        }
+
+        // Primer byte de major = ID de la medición
+        int tipoMedida = majorBytes[0] & 0xFF;
+        // Segundo byte de major = contador
+        int contador = majorBytes[1] & 0xFF;
+        // Valor de la medición = minor
+        int valorMedicion = Utilidades.bytesToInt(minorBytes);
+
+        // Convertir ID a string para identificar tipo de medida
+        String tipoString;
+        String unidad;
+        switch (tipoMedida) {
+            case 11:
+                tipoString = "CO2";
+                unidad = "ppm";
+                break;
+            case 12:
+                tipoString = "Temperatura";
+                unidad = "ºC";
+                break;
+            case 13:
+                tipoString = "Ruido";
+                unidad = "dB";
+                break;
+            default:
+                tipoString = "Desconocido";
+                unidad = "Desconocido";
+                break;
+        }
+
+        // Log limpio solo con lo que importa
+        Log.d(ETIQUETA_LOG, "*************** BEACON DETECTADO ***************");
+        Log.d(ETIQUETA_LOG, "UUID = " + Utilidades.bytesToString(tib.getUUID()));
+        Log.d(ETIQUETA_LOG, "Tipo de medida (ID) = " + tipoMedida + " -> " + tipoString);
+        Log.d(ETIQUETA_LOG, "Valor = " + valorMedicion + " " + unidad);
+        Log.d(ETIQUETA_LOG, "Contador = " + contador);
+        Log.d(ETIQUETA_LOG, "txPower = " + tib.getTxPower());
+        Log.d(ETIQUETA_LOG, "RSSI = " + rssi);
         Log.d(ETIQUETA_LOG, "****************************************************");
+
+        if (bluetoothDevice.getName() == "beaconfrito") {
+            insertarMedicion(valorMedicion, tipoString);
+        } else {
+            Log.d(ETIQUETA_LOG, "Dispositivo no registrado");
+        }
     }
+
 
     // --------------------------------------------------------------
     // Buscar dispositivo por nombre
@@ -166,7 +216,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // --------------------------------------------------------------
-    // Buscar dispositivo por UUID (nuevo método)
+    // Buscar dispositivo por UUID
     // --------------------------------------------------------------
     private void buscarDispositivoPorUUID(final UUID uuidBuscado) {
         Log.d(ETIQUETA_LOG, "Buscando dispositivo con UUID: " + uuidBuscado);
@@ -240,11 +290,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void botonBuscarNuestroDispositivoBTLEPulsado(View v) {
-        buscarEsteDispositivoBTLE("fistro");
+        buscarEsteDispositivoBTLE("beaconfrito");
     }
 
     public void botonBuscarPorUUIDPulsado(View v) {
-        // UUID ejemplo (debes reemplazarlo por el tuyo real)
+        // UUID ejemplo (ajusta según el de tu beacon)
         UUID uuid = UUID.fromString("74278bda-b644-4520-8f0c-720eaf059935");
         buscarDispositivoPorUUID(uuid);
     }
@@ -286,6 +336,37 @@ public class MainActivity extends AppCompatActivity {
             );
         }
     }
+
+    private void insertarMedicion(int major, String tipo ) {
+        RetrofitClient.getApiService().insertarMedicion(new Medicion(tipo,  major)).enqueue(new Callback<Void>() {
+            @Override
+            public void onResponse(Call<Void> call, Response<Void> response) {
+                if (response.isSuccessful()) {
+                    Log.d("API Response", "Medición insertada correctamente");
+                } else {
+                    Log.d("API Error", "Error en la respuesta: " + response.code());
+                }
+            }
+
+            @Override
+            public void onFailure(Call<Void> call, Throwable t) {
+                Log.e("API Failure", "Error al conectar con el servidor", t);
+            }
+        });
+
+    }
+    /************************************************************
+     * @fn double getMedicionsBeacon(ScanResult resultado)
+     * @brief Método que obtiene el valor de la medición de un beacon.
+     * @param[in] resultado Objeto ScanResult con la información del dispositivo detectado.
+     * @return Valor de la medición.
+     ************************************************************/
+    public double getMedicionsBeacon(ScanResult resultado) {
+        byte[] bytes = resultado.getScanRecord().getBytes();
+        TramaIBeacon tib = new TramaIBeacon(bytes);
+        return Utilidades.bytesToInt(tib.getMinor());
+    }
+
 
     // --------------------------------------------------------------
     @Override
