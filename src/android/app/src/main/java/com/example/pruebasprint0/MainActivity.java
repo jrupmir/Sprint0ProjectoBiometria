@@ -160,12 +160,8 @@ public class MainActivity extends AppCompatActivity {
         Log.d(ETIQUETA_LOG, "txPower = " + tib.getTxPower());
         Log.d(ETIQUETA_LOG, "RSSI = " + rssi);
         Log.d(ETIQUETA_LOG, "****************************************************");
+        insertarMedicion(valorMedicion, tipoString);
 
-        if (bluetoothDevice.getName() == "beaconfrito") {
-            insertarMedicion(valorMedicion, tipoString);
-        } else {
-            Log.d(ETIQUETA_LOG, "Dispositivo no registrado");
-        }
     }
 
 

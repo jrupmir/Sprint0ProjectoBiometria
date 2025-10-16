@@ -24,7 +24,7 @@ public class RetrofitClient {
         if (retrofit == null) {
             // Construye la instancia de Retrofit con la URL base y el convertidor Gson
             retrofit = new Retrofit.Builder()
-                    .baseUrl("http://192.168.1.19:3000/") // Cambia la IP por la de tu servidor
+                    .baseUrl("https://feghqusjsotnrxhfadrm.supabase.co") // Cambia la IP por la de tu servidor
                     .addConverterFactory(GsonConverterFactory.create())
                     .build();
         }
