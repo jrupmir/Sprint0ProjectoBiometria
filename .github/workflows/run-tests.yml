@@ -1,0 +1,37 @@
+name: Run tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-web-android-arduino:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install and run web tests
+        working-directory: src/web
+        run: |
+          npm ci --no-audit --no-fund --legacy-peer-deps
+          npm test
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Run Android unit tests (JVM)
+        working-directory: src/android
+        run: |
+          ./gradlew.bat test --no-daemon || ./gradlew test --no-daemon
+
+      - name: Run Arduino checks
+        run: |
+          python3 arduino/run_arduino_tests.py || python arduino/run_arduino_tests.py
